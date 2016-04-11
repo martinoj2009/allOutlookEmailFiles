@@ -5,11 +5,11 @@ using System.Runtime.InteropServices;
 // General Information about an assembly is controlled through the following 
 // set of attributes. Change these attribute values to modify the information
 // associated with an assembly.
-[assembly: AssemblyTitle("allOutlookEmailFiles")]
-[assembly: AssemblyDescription("")]
+[assembly: AssemblyTitle("Get Outlook Files")]
+[assembly: AssemblyDescription("This program will get the Outlook files for a user.")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("")]
-[assembly: AssemblyProduct("allOutlookEmailFiles")]
+[assembly: AssemblyProduct("Get Outlook Files")]
 [assembly: AssemblyCopyright("Copyright ©  2016")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]

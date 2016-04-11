@@ -29,22 +29,20 @@ namespace allOutlookEmailFiles
             
             GETFILES.WorkerSupportsCancellation = true;
             usernameLabel.Text = System.Environment.GetEnvironmentVariable("USERNAME");
-            //ManagementObjectSearcher query = new ManagementObjectSearcher("SELECT * FROM Win32_UserProfile WHERE Loaded = True");
 
             officeVersionLabel.Text = "";
+
 
             //Add all the SIDs on the machine, except for DEFAULT to the listbox
             foreach (string user in Directory.GetDirectories(@"C:\Users\"))
             {
                 //As long as the string isn't the DEFAULT user then continue
-                if (!(user == ".DEFAULT"))
+                if (!(user == "All Users") || !(user == "Default"))
                 {
                     registryUsers.Items.Add(user.Split('\\')[2]);
                 }
 
             }
-
-
 
         }
 
@@ -52,8 +50,7 @@ namespace allOutlookEmailFiles
         //This is the background worker that will get the files
         private void GETFILES_DoWork(object sender, DoWorkEventArgs e)
         {
-            //This is optional stuff the computer can get
-            //Get the username
+            //I'll make this later
             
         }
 
@@ -61,6 +58,15 @@ namespace allOutlookEmailFiles
         private void registryUsers_SelectedIndexChanged(object sender, EventArgs e)
         {
             officeVersionLabel.Text = getOutlookVersion();
+
+            //Test if file is locked
+            if(IsFileLocked(@"C:\Users\" + registryUsers.SelectedItem.ToString() + @"\NTUSER.DAT"))
+            {
+                MessageBox.Show("This user's NTUSER.DAT file is locked. You may need to reboot as Windows locks this file.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+
             RegistryKey usersRegistry = Registry.Users.OpenSubKey(registryUsers.SelectedItem.ToString() + @"\SOFTWARE\Microsoft\Office\" + getOutlookVersion() + @"\Outlook\Search");
 
             if (registryUsers.SelectedItem == null)
@@ -87,16 +93,7 @@ namespace allOutlookEmailFiles
                 allOutlookFiles.Items.Add("No Files Found");
                 return;
             }
-            /*
-            try
-            {
-                outlookFiles = usersRegistry.GetValueNames();
-            }
-            catch(Exception)
-            {
 
-            }
-            */
             if(outlookFiles != null || outlookFiles.Count != 0)
             {
                 allOutlookFiles.Items.Clear();
@@ -111,8 +108,8 @@ namespace allOutlookEmailFiles
                 allOutlookFiles.Items.Add("NO FILES FOUND!");
             }
 
-            
 
+            GC.Collect();
             
         }
 
@@ -134,24 +131,36 @@ namespace allOutlookEmailFiles
             Clipboard.SetText(items);
         }
 
-        private string[] getSIDS()
-        {
-            //Get all the SIDS in the registry
-            string[] users = Registry.Users.GetSubKeyNames();
-            return users;
-        }
-
 
         private string getOutlookVersion()
         {
+
+            //Mount NTUSER
+            Process mountNTUser = new Process();
+            mountNTUser.StartInfo.FileName = "C:\\Windows\\System32\\reg.exe";
+            mountNTUser.StartInfo.Arguments = "load HKU\\Subkey \"C:\\Users\\" + registryUsers.SelectedItem + "\\NTUSER.DAT\"";
+            mountNTUser.StartInfo.CreateNoWindow = true;
+            mountNTUser.StartInfo.WindowStyle = ProcessWindowStyle.Hidden;
+
+            try
+            {
+                mountNTUser.Start();
+                mountNTUser.WaitForExit();
+            }
+            catch(Exception)
+            {
+                return "";
+            }
+
+            //Query the key
+
             string highestVersion = "0";
 
-            
             //This function will get the registry of the requested user
             Process p = new Process();
             ProcessStartInfo info = new ProcessStartInfo();
-            info.FileName = "getVersion.bat";
-            info.Arguments = "ITSUS";
+            info.FileName = "C:\\Windows\\System32\\reg.exe";
+            info.Arguments = "query HKU\\Subkey\\SOFTWARE\\Microsoft\\Office";
             info.RedirectStandardInput = true;
             info.UseShellExecute = false;
             info.RedirectStandardOutput = true;
@@ -159,8 +168,23 @@ namespace allOutlookEmailFiles
             info.WindowStyle = ProcessWindowStyle.Hidden;
 
             p.StartInfo = info;
-            p.Start();
-            string[] output = p.StandardOutput.ReadToEnd().Split('\n');
+            string[] output;
+
+            try
+            {
+                p.Start();
+                output = p.StandardOutput.ReadToEnd().Split('\n');
+                p.WaitForExit();
+            }
+            catch(Exception ex)
+            {
+                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                p.Dispose();
+                output = null;
+                return "0";
+
+            }
+
 
             ArrayList officeVersions = new ArrayList();
             foreach (string line in output)
@@ -171,12 +195,13 @@ namespace allOutlookEmailFiles
                 }
 
                 
-                if(line.StartsWith(@"HKEY_CURRENT_USER\SOFTWARE\Microsoft\Office\"))
+                if(line.StartsWith(@"HKEY_USERS\Subkey\SOFTWARE\Microsoft\Office\"))
                 {
+                    //MessageBox.Show(line);
                     try
                     {
-                        Double.Parse(line.Split('\\')[4]);
-                        officeVersions.Add(line.Split('\\')[4]);
+                        Double.Parse(line.Split('\\')[5]);
+                        officeVersions.Add(line.Split('\\')[5]);
                     }
                     catch(Exception)
                     {
@@ -185,6 +210,7 @@ namespace allOutlookEmailFiles
                     
                 }
             }
+
 
             foreach (string num in officeVersions)
             {
@@ -200,61 +226,120 @@ namespace allOutlookEmailFiles
 
         private ArrayList getOutlookFiles()
         {
+
+
+            //Mount NTUSER
+            Process mountNTUser = new Process();
+            mountNTUser.StartInfo.FileName = "C:\\Windows\\System32\\reg.exe";
+            mountNTUser.StartInfo.Arguments = "load HKU\\Subkey \"C:\\Users\\" + registryUsers.SelectedItem + "\\NTUSER.DAT\"";
+            mountNTUser.StartInfo.CreateNoWindow = true;
+            mountNTUser.StartInfo.WindowStyle = ProcessWindowStyle.Hidden;
+
+
+            try
+            {
+                mountNTUser.Start();
+                mountNTUser.WaitForExit();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Cannot mount the NTUSER.dat file. " + ex.Message);
+                return null;
+            }
+
+
             //This function will get the registry of the requested user
             Process p = new Process();
             ProcessStartInfo info = new ProcessStartInfo();
-            info.FileName = "getFiles.bat";
-            info.Arguments = registryUsers.SelectedItem + " " + officeVersionLabel.Text;
+            info.FileName = "C:\\Windows\\System32\\reg.exe";
+            info.Arguments = "query HKU\\Subkey\\SOFTWARE\\Microsoft\\Office\\" + officeVersionLabel.Text.Trim() + "\\Outlook\\Search";
             info.RedirectStandardInput = true;
             info.UseShellExecute = false;
             info.RedirectStandardOutput = true;
             info.CreateNoWindow = true;
             info.WindowStyle = ProcessWindowStyle.Hidden;
 
+
             p.StartInfo = info;
-            string[] output = null;
+            string[] output;
+
             try
             {
                 p.Start();
                 output = p.StandardOutput.ReadToEnd().Split('\n');
+                p.WaitForExit();
             }
-            catch(Exception)
+            catch (Exception ex)
             {
+                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                p.Dispose();
+                output = null;
+                return null;
 
             }
+
+
+            //Unload the registry
+            Process unLoad = new Process();
+            unLoad.StartInfo.FileName = "C:\\Windows\\System32\\reg.exe";
+            unLoad.StartInfo.Arguments = "unload HKU\\Subkey";
+            unLoad.StartInfo.CreateNoWindow = true;
+            unLoad.StartInfo.WindowStyle = ProcessWindowStyle.Hidden;
+
+
+            try
+            {
+                unLoad.Start();
+                unLoad.WaitForExit();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Cant unload the NTUSER.dat. " + ex.Message);
+                return null;
+            }
+
 
             ArrayList files = new ArrayList();
             bool filesFound = false;
 
-            if(output != null)
-            {
+
                 foreach (string line in output)
                 {
-                    //files.Add(line);
+                allOutlookFiles.Items.Add(line);
                     if (line.Contains("ERROR:"))
                     {
-
+                        p.Dispose();
+                        output = null;
                         return files = (null);
                     }
 
                     if (line.Contains("REG_DWORD"))
                     {
+                    
                         filesFound = true;
-                        //MessageBox.Show(line.Split(new string[] { "REG_DWORD" }, StringSplitOptions.None)[0]);
                         files.Add(line.Split(new string[] { "REG_DWORD" }, StringSplitOptions.None)[0].Trim());
                     }
                 }
 
-                if(filesFound == false)
-                {
-                    return files = (null);
-                }
-            }
-            
-
-
+            p.Dispose();
+            output = null;
             return files;
         }
 
+        public bool IsFileLocked(string filePath)
+        {
+            try
+            {
+                using (File.Open(filePath, FileMode.Open)) { }
+            }
+            catch (IOException e)
+            {
+                var errorCode = System.Runtime.InteropServices.Marshal.GetHRForException(e) & ((1 << 16) - 1);
+
+                return errorCode == 32 || errorCode == 33;
+            }
+
+            return false;
+        }
     }
 }
